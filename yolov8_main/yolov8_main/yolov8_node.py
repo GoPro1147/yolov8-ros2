@@ -76,59 +76,49 @@ class Yolov8Node(Node) :
             self.get_logger().info('No objects detected')
             return
         
+        max_bbox_idx = 0
+        max_bbox_size = 0
         for i in range(len(results)) :
-            inference_result =  Yolov8Inference()
+            bbox_info = results.boxes[i]
+            bbox_size = bbox_info.xywh[0][2] * bbox_info.xywh[0][3]
+            if bbox_size > max_bbox_size:
+                max_bbox_size = bbox_size
+                max_bbox_idx = i
 
-            if results.boxes :
-                bbox_info = results.boxes[i]
-                inference_result.class_id = int(bbox_info.cls)
-                inference_result.class_name = self.model.names[int(bbox_info.cls)]
-                inference_result.score = float(bbox_info.conf)
+        inference_result =  Yolov8Inference()
+        bbox_info = results.boxes[max_bbox_idx]
+        inference_result.class_id = int(bbox_info.cls)
+        inference_result.class_name = self.model.names[int(bbox_info.cls)]
+        inference_result.score = float(bbox_info.conf)
 
-                bbox_msg = BoundingBox()
+        bbox_msg = BoundingBox()
 
-                bbox = bbox_info.xywh[0]
-                bbox_msg.center.x = float(bbox[0])
-                bbox_msg.center.y = float(bbox[1])
-                bbox_msg.size.x = float(bbox[2])
-                bbox_msg.size.y = float(bbox[3])
-                
-                inference_result.bbox = bbox_msg
+        bbox = bbox_info.xywh[0]
+        bbox_msg.center.x = float(bbox[0])
+        bbox_msg.center.y = float(bbox[1])
+        bbox_msg.size.x = float(bbox[2])
+        bbox_msg.size.y = float(bbox[3])
+        
+        inference_result.bbox = bbox_msg
 
-                label = inference_result.class_name
+        label = inference_result.class_name
 
-                if label not in self._class_to_color :
-                    r = random.randint(0, 255)
-                    g = random.randint(0, 255)
-                    b = random.randint(0, 255)
-                    self._class_to_color[label] = (r, g, b)
-                
-                color = self._class_to_color[label]
+        if label not in self._class_to_color :
+            r = random.randint(0, 255)
+            g = random.randint(0, 255)
+            b = random.randint(0, 255)
+            self._class_to_color[label] = (r, g, b)
+        
+        color = self._class_to_color[label]
 
-                pt1 = (round(bbox_msg.center.x - bbox_msg.size.x / 2.0),
-                        round(bbox_msg.center.y - bbox_msg.size.y / 2.0))
-                pt2 = (round(bbox_msg.center.x + bbox_msg.size.x / 2.0),
-                        round(bbox_msg.center.y + bbox_msg.size.y / 2.0))
-                cv2.rectangle(img, pt1, pt2, color, 2)
-                cv2.putText(img, str(inference_result.class_name), ((pt1[0]+pt2[0])//2-5, pt1[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 1, color, thickness=2)
+        pt1 = (round(bbox_msg.center.x - bbox_msg.size.x / 2.0),
+                round(bbox_msg.center.y - bbox_msg.size.y / 2.0))
+        pt2 = (round(bbox_msg.center.x + bbox_msg.size.x / 2.0),
+                round(bbox_msg.center.y + bbox_msg.size.y / 2.0))
+        cv2.rectangle(img, pt1, pt2, color, 2)
+        cv2.putText(img, str(inference_result.class_name), ((pt1[0]+pt2[0])//2-5, pt1[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 1, color, thickness=2)
 
-            if results.masks :
-                mask_info = results.masks[i]
-                mask_msg = Mask()
-                mask_msg.data = [Point2D(x=float(point[0]), y=float(point[1])) for point in mask_info.xy[0].tolist()]
-                mask_msg.height = results.orig_img.shape[0]
-                mask_msg.width = results.orig_img.shape[1]
-
-                inference_result.mask = mask_msg
-
-                mask_array = np.array([[int(point.x), int(point.y)] for point in mask_msg.data])
-
-                temp = img.copy()
-                temp = cv2.fillPoly(temp, [mask_array], color)
-                cv2.addWeighted(img, 0.4, temp, 0.6, 0, img)
-                img = cv2.polylines(img, [mask_array], True, color, 2)
-
-            inference_msg.yolov8_inference.append(inference_result)
+        inference_msg.yolov8_inference.append(inference_result)
 
         inference_msg.header = msg.header
         self.img_pub.publish(self.cv_bridge.cv2_to_imgmsg(img))
